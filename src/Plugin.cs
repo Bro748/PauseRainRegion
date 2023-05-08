@@ -1,5 +1,11 @@
 ﻿using BepInEx;
+using System.IO;
+using System;
+using System.Runtime.CompilerServices;
 using System.Security.Permissions;
+using static MonoMod.InlineRT.MonoModRule;
+using static System.Net.Mime.MediaTypeNames;
+using System.Text.RegularExpressions;
 
 // Allows access to private members
 #pragma warning disable CS0618
@@ -8,7 +14,7 @@ using System.Security.Permissions;
 
 namespace TestMod;
 
-[BepInPlugin("com.author.testmod", "Test Mod", "0.1.0")]
+[BepInPlugin("bro.HaltRain", "HaltRain", "0.1.0")]
 sealed class Plugin : BaseUnityPlugin
 {
     bool init;
@@ -16,18 +22,63 @@ sealed class Plugin : BaseUnityPlugin
     public void OnEnable()
     {
         // Add hooks here
-        On.RainWorld.OnModsInit += OnModsInit;
+        On.RainCycle.Update += RainCycle_Update;
+        On.Region.ctor += Region_ctor;
     }
 
-    private void OnModsInit(On.RainWorld.orig_OnModsInit orig, RainWorld self)
+    private void Region_ctor(On.Region.orig_ctor orig, Region self, string name, int firstRoomIndex, int regionNumber, SlugcatStats.Name storyIndex)
+    {
+        orig(self, name, firstRoomIndex, regionNumber, storyIndex);
+        string text = "";
+        if (storyIndex != null)
+        {
+            text = "-" + storyIndex.value;
+        }
+        string path = AssetManager.ResolveFilePath(string.Concat(new string[]
+    {
+        "World",
+        Path.DirectorySeparatorChar.ToString(),
+        name,
+        Path.DirectorySeparatorChar.ToString(),
+        "properties",
+        text,
+        ".txt"
+    }));
+        if (text != "" && !File.Exists(path))
+        {
+            path = AssetManager.ResolveFilePath(string.Concat(new string[]
+            {
+            "World",
+            Path.DirectorySeparatorChar.ToString(),
+                name,
+            Path.DirectorySeparatorChar.ToString(),
+            "properties.txt"
+            }));
+        }
+
+        if (File.Exists(path))
+        {
+            foreach (string str in File.ReadAllLines(path))
+            {
+                string[] array2 = Regex.Split(RWCustom.Custom.ValidateSpacedDelimiter(str, ":"), ": ");
+                if (array2.Length >= 2 && array2[0] == "PauseTimerAt")
+                {
+                    PausePoint(self).Value = float.Parse(array2[1]);
+                }
+            }
+        }
+    }
+
+    private static readonly ConditionalWeakTable<Region, StrongBox<float>> table = new();
+
+    public static StrongBox<float> PausePoint(Region p) => table.GetValue(p, _ => new StrongBox<float>(-1f));
+
+    private void RainCycle_Update(On.RainCycle.orig_Update orig, RainCycle self)
     {
         orig(self);
+        int pausePoint = (int)(self.cycleLength * PausePoint(self.world.region).Value);
+        if (pausePoint == -1 || pausePoint > self.timer) return;
 
-        if (init) return;
-
-        init = true;
-
-        // Initialize assets, your mod config, and anything that uses RainWorld here
-        Logger.LogDebug("Hello world!");
+        self.pause = 10;
     }
 }
