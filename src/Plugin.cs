@@ -76,8 +76,9 @@ sealed class Plugin : BaseUnityPlugin
     private void RainCycle_Update(On.RainCycle.orig_Update orig, RainCycle self)
     {
         orig(self);
+        if (!self.world.game.IsStorySession || self.world.region == null) return;
         int pausePoint = (int)(self.cycleLength * PausePoint(self.world.region).Value);
-        if (pausePoint == -1 || pausePoint > self.timer) return;
+        if (PausePoint(self.world.region).Value == -1f || pausePoint > self.timer) return;
 
         self.pause = 10;
     }
